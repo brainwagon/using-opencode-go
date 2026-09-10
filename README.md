@@ -107,8 +107,10 @@ multiplier, and the daily budget needed to finish the month at 100%.
 ### Usage
 
 ```
-./go-usage             # quota summary for all three windows
-./go-usage --models    # also break the current billing month down by model
+./go-usage                    # quota summary for all three windows
+./go-usage --models           # break down Go spend, and paid spend off the plan
+./go-usage --all              # every model used, all providers, with cost
+./go-usage --all --days 365   # widen either breakdown to an arbitrary window
 ```
 
 No dependencies beyond the Python 3 standard library.
@@ -177,6 +179,39 @@ have been moved. The match is on the bare model id after stripping any vendor pr
 undated `deepseek-v4-flash`, so treat that marking as conservative. A model with no Go
 equivalent at all — `gpt-5.6-sol` here — is not waste; there is simply nothing on the plan
 to switch it to.
+
+### Every model used
+
+`--models` deliberately narrows to the Go plan. `--all` does the opposite — every model
+from every provider, including the ones that cost nothing:
+
+```
+All models used, this billing month (since 31 Aug 16:29 PDT, local estimates)
+
+  provider/model                                         msgs      cost    $/msg
+  opencode-go/glm-5.3-flash                               414    0.9033   0.0022
+  openrouter/openai/gpt-5.6-sol                            31    0.7920   0.0255
+  opencode-go/qwen3.8-flash                               192    0.3010   0.0016
+  opencode-go/deepseek-v4-flash-vision-exp                279    0.2266   0.0008
+  opencode-go/kimi-k3                                       3    0.1458   0.0486
+  openrouter/deepseek/deepseek-v4-flash-0731               60    0.0854   0.0014
+  opencode-go/gpt-5.6-luna                                 30    0.0551   0.0018
+  ollama/ornith-1.5:9b                                     19    0.0000   0.0000
+  ...
+                                                       ------ ---------
+  total                                                  1048    2.5130
+
+  8 of these cost nothing (local or free-tier models).
+```
+
+Sorted by cost, so the models worth thinking about sit at the top and the free ones settle
+to the bottom. Zero-cost rows are counted rather than hidden — `ollama` models run on your
+own hardware and free-tier models bill nothing, and it is useful to see how much of your
+volume they carry.
+
+`--days N` sets the window for either breakdown; without it both use the current billing
+month, which is the period that matters for the cap. The flags combine, and costs
+throughout are **local estimates**, not any provider's bill.
 
 **This table comes from local data and will understate the server.** The usage API reports
 only three aggregate percentages — there is no per-model endpoint (`usage/models`,

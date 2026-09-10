@@ -29,6 +29,15 @@ def fetch():
     return json.load(urllib.request.urlopen(req, timeout=20))["usage"]
 
 
+def format_when(dt, now=None):
+    """Local timestamp, carrying the year only when it is not the current one."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    local = dt.astimezone()
+    fmt = "%d %b %H:%M %Z" if local.year == now.astimezone().year else "%d %b %Y %H:%M %Z"
+    return local.strftime(fmt)
+
+
 def format_hours(hours):
     """Render a duration: hours under a day, days and hours beyond that."""
     if hours < 0:
@@ -73,6 +82,43 @@ def window_start(usage, key="monthly", now=None):
     _label, _cap, days = WINDOWS[key]
     reset = _dt.datetime.fromisoformat(usage[key]["resetsAt"].replace("Z", "+00:00"))
     return reset - _dt.timedelta(days=days)
+
+
+def all_models(since):
+    """Every model used since `since`, across all providers, zero-cost included.
+
+    Same local-data caveats as model_breakdown: this machine only, priced
+    locally, so costs are estimates rather than the provider's bill.
+    """
+    import sqlite3, json as _json
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
+    try:
+        rows = con.execute(
+            "SELECT data FROM message WHERE time_created >= ? AND data LIKE '%\"cost\"%'",
+            (int(since.timestamp() * 1000),)).fetchall()
+    finally:
+        con.close()
+
+    agg = {}
+    for (blob,) in rows:
+        try:
+            d = _json.loads(blob)
+        except ValueError:
+            continue
+        model, provider = d.get("modelID"), d.get("providerID")
+        if not model or d.get("cost") is None:
+            continue
+        t = d.get("tokens") or {}
+        cache = t.get("cache") or {}
+        e = agg.setdefault((provider, model), {
+            "provider": provider, "model": model, "name": f"{provider}/{model}",
+            "messages": 0, "cost": 0.0, "input": 0, "output": 0, "cache_read": 0})
+        e["messages"] += 1
+        e["cost"] += d["cost"]
+        e["input"] += t.get("input") or 0
+        e["output"] += t.get("output") or 0
+        e["cache_read"] += cache.get("read") or 0
+    return sorted(agg.values(), key=lambda r: (-r["cost"], -r["messages"]))
 
 
 def model_breakdown(since):

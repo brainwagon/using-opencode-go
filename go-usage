@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Show remaining opencode Go quota against the $12/5h, $30/week, $60/month caps.
-
-  go-usage             quota summary for all three windows
-  go-usage --models    also break the current billing month down by model
-"""
-import sys, os, datetime
+"""Show remaining opencode Go quota against the $12/5h, $30/week, $60/month caps."""
+import sys, os, argparse, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from goquota import (WINDOWS, fetch, window_state, window_start,
-                     model_breakdown, models_available, format_hours, PROVIDER)
+from goquota import (WINDOWS, fetch, window_state, window_start, model_breakdown,
+                     all_models, models_available, format_hours, format_when,
+                     PROVIDER)
 
-show_models = "--models" in sys.argv[1:]
-for arg in sys.argv[1:]:
-    if arg != "--models":
-        sys.exit(f"go-usage: unknown option {arg}\n{__doc__}")
+p = argparse.ArgumentParser(
+    description="Remaining opencode Go quota, with optional usage breakdowns.")
+p.add_argument("--models", action="store_true",
+               help=f"break down {PROVIDER} spend, and paid spend off the plan")
+p.add_argument("--all", action="store_true",
+               help="list every model used, all providers, with estimated cost")
+p.add_argument("--days", type=float, metavar="N",
+               help="window for the breakdowns (default: the current billing month)")
+args = p.parse_args()
 
 try:
     usage = fetch()
@@ -36,17 +38,47 @@ for key, (label, cap, _days) in WINDOWS.items():
               f"for the remaining {hours_left/24:.1f} days")
     print()
 
-if not show_models:
+if args.all or args.models:
+    if args.days:
+        start = now - datetime.timedelta(days=args.days)
+        period = f"last {args.days:g} days"
+    else:
+        start = window_start(usage, "monthly")
+        period = "this billing month"
+
+if args.all:
+    try:
+        rows = all_models(start)
+    except Exception as e:
+        sys.exit(f"go-usage: could not read local history: {e}")
+    print(f"All models used, {period} "
+          f"(since {format_when(start, now)}, local estimates)\n")
+    if not rows:
+        sys.exit("  nothing recorded locally in this window")
+    print(f"  {'provider/model':<52} {'msgs':>6} {'cost':>9} {'$/msg':>8}")
+    for r_ in rows:
+        per = r_["cost"] / r_["messages"] if r_["messages"] else 0
+        print(f"  {r_['name']:<52} {r_['messages']:>6} {r_['cost']:>9.4f} {per:>8.4f}")
+    print(f"  {'':<52} {'-'*6} {'-'*9}")
+    print(f"  {'total':<52} {sum(x['messages'] for x in rows):>6} "
+          f"{sum(x['cost'] for x in rows):>9.4f}")
+    free = [x for x in rows if not x["cost"]]
+    if free:
+        print(f"\n  {len(free)} of these cost nothing (local or free-tier models).")
+    if not args.models:
+        sys.exit(0)
+    print()
+
+if not args.models:
     sys.exit(0)
 
-start = window_start(usage, "monthly")
 try:
     rows, others = model_breakdown(start)
 except Exception as e:
     sys.exit(f"go-usage: could not read local history: {e}")
 
-print(f"Per-model usage this billing month (local data since "
-      f"{start.astimezone():%d %b %H:%M %Z})\n")
+print(f"Per-model {PROVIDER} usage, {period} (local data since "
+      f"{format_when(start, now)})\n")
 if not rows:
     print(f"  no {PROVIDER} messages recorded locally in this window")
     sys.exit(0)
