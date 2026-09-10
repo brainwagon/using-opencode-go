@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Notify via Windows toast when opencode Go monthly spend falls below a pace target.
+"""Notify when opencode Go monthly spend falls below a pace target.
 
 Intended for cron under WSL2. Sends at most one notification per GO_ALERT_INTERVAL_H
 hours so a frequent schedule does not nag.
@@ -8,39 +8,18 @@ Env vars:
   GO_PACE_TARGET      alert when pace drops below this (default 0.6)
   GO_MIN_ELAPSED      skip until this % of the month has elapsed (default 20)
   GO_ALERT_INTERVAL_H minimum hours between notifications (default 24)
+  GO_NOTIFY            backend: msgbox (default), balloon, or toast
 """
-import sys, os, json, subprocess, datetime
+import sys, os, json, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from goquota import fetch, window_state
+from notify import notify, BACKEND
 
 PACE_TARGET = float(os.environ.get("GO_PACE_TARGET", "0.6"))
 MIN_ELAPSED = float(os.environ.get("GO_MIN_ELAPSED", "20"))
 INTERVAL_H = float(os.environ.get("GO_ALERT_INTERVAL_H", "24"))
 STATE = os.path.expanduser("~/.cache/go-alert.json")
-# cron's PATH is /usr/bin:/bin, so powershell.exe must be absolute
-POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-APP_ID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
-
-
-def toast(title, message):
-    """Raise a Windows notification. Returns True on success."""
-    ps = f'''
-[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime] | Out-Null
-$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-$t.GetElementsByTagName("text").Item(0).AppendChild($t.CreateTextNode({json.dumps(title)})) | Out-Null
-$t.GetElementsByTagName("text").Item(1).AppendChild($t.CreateTextNode({json.dumps(message)})) | Out-Null
-$n=[Windows.UI.Notifications.ToastNotification]::new($t)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier({json.dumps(APP_ID)}).Show($n)
-'''
-    try:
-        subprocess.run([POWERSHELL, "-NoProfile", "-Command", ps],
-                       check=True, timeout=60,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
-        print(f"go-alert: toast failed: {e}", file=sys.stderr)
-        return False
 
 
 def recently_alerted(now):
@@ -76,9 +55,9 @@ def main():
     days_left = hours_left / 24
     msg = (f"{pace:.2f}x pace - ${left:.2f} unused with {days_left:.1f} days left. "
            f"Spend ${left/days_left:.2f}/day to use it all.")
-    if toast("opencode Go underused", msg):
+    if notify("opencode Go underused", msg):
         record(now)
-        print(f"go-alert: notified ({msg})")
+        print(f"go-alert: notified via {BACKEND} ({msg})")
     return 0
 
 

@@ -155,15 +155,15 @@ Both scripts share `goquota.py`, which holds the constants in one place:
 
 ## Alerting from cron (WSL2)
 
-`go-alert` checks your monthly pace and raises a **Windows toast notification** when you
-are underspending. It is meant to be run from cron.
+`go-alert` checks your monthly pace and raises a **Windows notification** when you are
+underspending. It is meant to be run from cron.
 
 ```
 ./go-alert
 ```
 
 It prints nothing and exits 0 when there is nothing to say, so cron stays quiet. When it
-does fire you get a toast reading:
+does fire you get a notification reading:
 
 ```
 opencode Go underused
@@ -179,6 +179,7 @@ Configured entirely by environment variable, so the cron line is the only thing 
 | `GO_PACE_TARGET`      | `0.6`   | Alert when pace drops below this multiplier           |
 | `GO_MIN_ELAPSED`      | `20`    | Stay silent until this % of the month has elapsed     |
 | `GO_ALERT_INTERVAL_H` | `24`    | Minimum hours between notifications                   |
+| `GO_NOTIFY`           | `msgbox`| Notification backend: `msgbox`, `balloon`, or `toast`  |
 
 `GO_MIN_ELAPSED` exists because pace is meaningless in the first hours after a reset — a
 single day of light use looks like a catastrophic shortfall. `GO_ALERT_INTERVAL_H` is
@@ -200,6 +201,38 @@ Absolute path is required: cron runs with `PATH=/usr/bin:/bin`, which contains n
 script nor `powershell.exe`. `go-alert` hardcodes the full path to `powershell.exe` for the
 same reason.
 
+### Notification backends
+
+Getting a notification out of WSL2 turned out to be the hard part, so `notify.py` carries
+three backends, chosen with `GO_NOTIFY`:
+
+| Backend   | Mechanism                        | Status on this machine                    |
+| --------- | -------------------------------- | ----------------------------------------- |
+| `msgbox`  | modal `MessageBox` dialog        | **works** (default)                       |
+| `balloon` | tray balloon via `NotifyIcon`    | untested/unconfirmed                      |
+| `toast`   | native `Windows.UI.Notifications`| **silently dropped** — see below          |
+
+`msgbox` is the default because it is the only one confirmed to render here. The tradeoff
+is that it steals focus and blocks until dismissed, which is tolerable twice a day but
+would be obnoxious hourly.
+
+**The toast trap.** Native toasts fail *silently* for non-packaged apps. The API call
+succeeds, `$notifier.Setting` reports `Enabled`, and nothing whatsoever appears on screen.
+There is no exception to catch and no error to log, so a cron job using toasts looks
+exactly like a cron job that never ran. Registering an AppUserModelId under
+`HKCU\SOFTWARE\Classes\AppUserModelId\opencode.Go.Monitor` got Windows to create a
+notification-settings entry for the app, but still produced no visible toast. Diagnostics
+ruled out the usual suspects: no Focus Assist / Do Not Disturb active, no global toast
+toggle disabled, `explorer.exe` present in the same session, and the process holding an
+interactive `WinSta0` window station. If you want to keep chasing it, installing the
+BurntToast module is the next thing to try; `msgbox` sidesteps the issue entirely.
+
+To remove the registered AppID:
+
+```powershell
+Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\opencode.Go.Monitor" -Recurse
+```
+
 ### WSL2 specifics
 
 These were verified on this machine, but they are the things that break on a fresh WSL
@@ -216,10 +249,11 @@ install:
   the distro on demand.
 - **`notify-send` does not work here.** WSLg provides a display but no notification daemon —
   it fails with `org.freedesktop.Notifications was not provided by any .service files`.
-  Hence the PowerShell toast, which needs no extra packages (BurntToast is *not* required).
-- Toasts are attributed to Windows PowerShell and land in the Action Center. If none
-  appear, check Focus Assist / Do Not Disturb and that notifications are enabled for
-  Windows PowerShell.
+  Every backend therefore goes out through `powershell.exe`, none of which need extra
+  packages installed.
+- **GUI from WSL does reach the desktop.** `[Environment]::UserInteractive` is true, the
+  window station is `WinSta0`, and dialogs render on the 1920x1080 primary screen. If a
+  notification does not appear, the backend is at fault, not the WSL/Windows boundary.
 
 ## Reconciling with `opencode stats`
 
