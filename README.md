@@ -81,11 +81,17 @@ That console setting falls back to pay-as-you-go from your account balance when 
 limit instead of blocking. Turn it on only once you are routinely *hitting* the monthly
 cap; while you are under it, it can only cost you money you didn't need to spend.
 
-### 5. Shift spend off other providers
+### 5. Shift substitutable spend off other providers
 
-Any work sent to a metered provider (OpenRouter and friends) while prepaid Go budget sits
-idle is money spent twice. Prefer Go for anything with a comparable model on the plan,
-until the monthly cap is the thing stopping you.
+Work sent to a metered provider (OpenRouter and friends) while prepaid Go budget sits idle
+is money spent twice. Prefer Go for anything with a comparable model on the plan, until
+the monthly cap is the thing stopping you.
+
+Check the size of this before acting on it, though — `go-usage --models` itemizes it. On
+this machine it turned out to be worth almost nothing: of $0.88 spent off-plan in a
+window, all but half a cent went to `gpt-5.6-sol`, which Go does not serve at all. Spend
+on a model with no Go equivalent is not waste, and local `ollama` models cost nothing to
+begin with. This strategy only pays where the *same* model is available on both.
 
 ### 6. Watch pace, not totals
 
