@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Show remaining opencode Go quota against the $12/5h, $30/week, $60/month caps."""
+import json, urllib.request, datetime
+
+AUTH = "/home/markv/.local/share/opencode/auth.json"
+CAPS = {"rolling": ("5-hour", 12.0), "weekly": ("weekly", 30.0), "monthly": ("monthly", 60.0)}
+WINDOW_DAYS = {"rolling": 5 / 24, "weekly": 7.0, "monthly": 30.0}
+
+key = json.load(open(AUTH))["opencode-go"]["key"]
+req = urllib.request.Request("https://opencode.ai/zen/go/v1/usage",
+                             headers={"Authorization": "Bearer " + key,
+                                      "User-Agent": "go-usage/1.0"})
+usage = json.load(urllib.request.urlopen(req, timeout=20))["usage"]
+
+now = datetime.datetime.now(datetime.timezone.utc)
+print(f"opencode Go usage @ {now.astimezone():%Y-%m-%d %H:%M %Z}\n")
+for k, (label, cap) in CAPS.items():
+    d = usage[k]
+    pct = d["percent"]
+    reset = datetime.datetime.fromisoformat(d["resetsAt"].replace("Z", "+00:00"))
+    left_h = (reset - now).total_seconds() / 3600
+    # how far through the window we are, to compare spend rate vs elapsed time
+    elapsed_pct = 100 * (1 - left_h / (WINDOW_DAYS[k] * 24))
+    burn = f"{pct/elapsed_pct:.2f}x pace" if elapsed_pct > 1 else "window just reset"
+    print(f"{label:>7}: ${cap*pct/100:6.2f} used / ${cap:5.2f}  "
+          f"-> ${cap*(100-pct)/100:6.2f} left  ({pct}%, {burn})")
+    print(f"{'':>7}  resets {reset.astimezone():%a %d %b %H:%M %Z} (in {left_h:.1f}h)"
+          f"  status={d['status']}")
+    if k == "monthly" and elapsed_pct > 1:
+        print(f"{'':>7}  budget to fully use: ${cap*(100-pct)/100/(left_h/24):.2f}/day "
+              f"for the remaining {left_h/24:.1f} days")
+    print()

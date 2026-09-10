@@ -1,0 +1,11 @@
+# Never commit credentials
+auth.json
+*.key
+*.pem
+.env
+.env.*
+secrets.json
+
+# Local scratch
+__pycache__/
+*.pyc
