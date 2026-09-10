@@ -101,10 +101,11 @@ multiplier, and the daily budget needed to finish the month at 100%.
 ### Usage
 
 ```
-./go-usage
+./go-usage             # quota summary for all three windows
+./go-usage --models    # also break the current billing month down by model
 ```
 
-No arguments, no dependencies beyond the Python 3 standard library.
+No dependencies beyond the Python 3 standard library.
 
 ```
 opencode Go usage @ 2026-09-10 12:19 PDT
@@ -119,6 +120,46 @@ monthly: $  4.20 used / $60.00  -> $ 55.80 left  (7%, 0.21x pace)
          resets Wed 30 Sep 16:29 PDT (in 484.2h)  status=ok
          budget to fully use: $2.77/day for the remaining 20.2 days
 ```
+
+### Per-model breakdown
+
+`--models` adds a table of where this billing month's money actually went:
+
+```
+Per-model usage this billing month (local data since 31 Aug 16:29 PDT)
+
+  model                            msgs      cost    $/msg  share  cached
+  glm-5.3-flash                     414    0.9033   0.0022    55%     96%
+  qwen3.8-flash                     192    0.3010   0.0016    18%    100%
+  deepseek-v4-flash-vision-exp      279    0.2266   0.0008    14%     96%
+  kimi-k3                             3    0.1458   0.0486     9%     38%
+  gpt-5.6-luna                       30    0.0551   0.0018     3%    100%
+                                 ------ ---------
+  local total                       918    1.6318
+  server reports                             4.20   (local accounts for 39%)
+
+  $0.88 more went to providers not on the Go plan this window -- that spend is
+  billed separately while Go budget sits unused.
+```
+
+- **$/msg** is the lever for strategy 1 above. The spread here is ~60x between
+  `deepseek-v4-flash-vision-exp` and `kimi-k3`; at $2.77/day of unused budget, that gap is
+  the whole argument for routing real work to the expensive models.
+- **cached** is cache-read tokens as a share of all input tokens seen, so it measures
+  strategy 2 directly. High is good. `kimi-k3` at 38% across only 3 messages is what a
+  cold start looks like.
+- **share** is share of the *local* total, not of the cap.
+
+**This table comes from local data and will understate the server.** The usage API reports
+only three aggregate percentages — there is no per-model endpoint (`usage/models`,
+`usage/breakdown` and friends all 404, and query parameters are ignored), so the breakdown
+is computed from opencode's own SQLite database at
+`~/.local/share/opencode/opencode.db`, read-only. The `server reports` line makes the gap
+explicit rather than hiding it: on this machine local data accounts for only ~39% of what
+opencode actually billed. See the reconciliation section at the end for why.
+
+The window is derived by subtracting the nominal window length from the monthly reset
+time, so it is approximate at the boundary in the same way the pace math is.
 
 ### Reading the output
 
@@ -138,6 +179,9 @@ Both scripts share `goquota.py`, which holds the constants in one place:
   `~/.local/share/opencode/auth.json`. The `opencode-go` key is read from it at runtime; no
   key is stored in this repo.
 - `ENDPOINT` — the usage URL.
+- `DB` — opencode's SQLite database, source of the `--models` breakdown.
+- `PROVIDER` — the provider id counted against the Go plan (`opencode-go`); spend under
+  any other provider is reported separately as billed elsewhere.
 - `WINDOWS` — maps each window to its label, dollar cap, and length in days. **Update the
   caps here if opencode changes the plan**, since the API reports only percentages and
   cannot tell you the caps moved.

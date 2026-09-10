@@ -37,3 +37,59 @@ def window_state(usage, key, now=None):
     hours_left = (reset - now).total_seconds() / 3600
     elapsed_pct = 100 * (1 - hours_left / (days * 24))
     return pct, cap * pct / 100, cap * (100 - pct) / 100, reset, hours_left, elapsed_pct
+
+
+DB = os.path.expanduser("~/.local/share/opencode/opencode.db")
+PROVIDER = "opencode-go"
+
+
+def window_start(usage, key="monthly", now=None):
+    """Approximate the start of a window from its reset time and nominal length."""
+    import datetime as _dt
+    _label, _cap, days = WINDOWS[key]
+    reset = _dt.datetime.fromisoformat(usage[key]["resetsAt"].replace("Z", "+00:00"))
+    return reset - _dt.timedelta(days=days)
+
+
+def model_breakdown(since):
+    """Per-model local usage since `since` (a tz-aware datetime).
+
+    Reads opencode's own database, so this reflects only sessions run on this
+    machine and prices computed locally -- see the README on reconciling with
+    the server's figure. Returns (go_rows, other_total) where go_rows is a list
+    of dicts sorted by cost, descending.
+    """
+    import sqlite3, json as _json
+    since_ms = int(since.timestamp() * 1000)
+    # read-only, so a running opencode is never disturbed
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
+    try:
+        rows = con.execute(
+            "SELECT data FROM message WHERE time_created >= ? AND data LIKE '%\"cost\"%'",
+            (since_ms,)).fetchall()
+    finally:
+        con.close()
+
+    agg, other = {}, 0.0
+    for (blob,) in rows:
+        try:
+            d = _json.loads(blob)
+        except ValueError:
+            continue
+        cost = d.get("cost")
+        model, provider = d.get("modelID"), d.get("providerID")
+        if cost is None or not model:
+            continue
+        if provider != PROVIDER:
+            other += cost
+            continue
+        t = d.get("tokens") or {}
+        cache = t.get("cache") or {}
+        e = agg.setdefault(model, {"model": model, "messages": 0, "cost": 0.0,
+                                   "input": 0, "output": 0, "cache_read": 0})
+        e["messages"] += 1
+        e["cost"] += cost
+        e["input"] += t.get("input") or 0
+        e["output"] += t.get("output") or 0
+        e["cache_read"] += cache.get("read") or 0
+    return sorted(agg.values(), key=lambda r: r["cost"], reverse=True), other

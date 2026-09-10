@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Show remaining opencode Go quota against the $12/5h, $30/week, $60/month caps."""
+"""Show remaining opencode Go quota against the $12/5h, $30/week, $60/month caps.
+
+  go-usage             quota summary for all three windows
+  go-usage --models    also break the current billing month down by model
+"""
 import sys, os, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from goquota import WINDOWS, fetch, window_state
+from goquota import (WINDOWS, fetch, window_state, window_start,
+                     model_breakdown, PROVIDER)
+
+show_models = "--models" in sys.argv[1:]
+for arg in sys.argv[1:]:
+    if arg != "--models":
+        sys.exit(f"go-usage: unknown option {arg}\n{__doc__}")
 
 usage = fetch()
 now = datetime.datetime.now(datetime.timezone.utc)
@@ -18,3 +28,39 @@ for key, (label, cap, _days) in WINDOWS.items():
         print(f"{'':>7}  budget to fully use: ${left/(hours_left/24):.2f}/day "
               f"for the remaining {hours_left/24:.1f} days")
     print()
+
+if not show_models:
+    sys.exit(0)
+
+start = window_start(usage, "monthly")
+try:
+    rows, other = model_breakdown(start)
+except Exception as e:
+    sys.exit(f"go-usage: could not read local history: {e}")
+
+print(f"Per-model usage this billing month (local data since "
+      f"{start.astimezone():%d %b %H:%M %Z})\n")
+if not rows:
+    print(f"  no {PROVIDER} messages recorded locally in this window")
+    sys.exit(0)
+
+print(f"  {'model':<30} {'msgs':>6} {'cost':>9} {'$/msg':>8} {'share':>6} {'cached':>7}")
+local_total = sum(r["cost"] for r in rows)
+msgs = sum(r["messages"] for r in rows)
+for r in rows:
+    per = r["cost"] / r["messages"] if r["messages"] else 0
+    share = 100 * r["cost"] / local_total if local_total else 0
+    seen = r["input"] + r["cache_read"]
+    cached = f"{100*r['cache_read']/seen:.0f}%" if seen else "-"
+    print(f"  {r['model']:<30} {r['messages']:>6} {r['cost']:>9.4f} "
+          f"{per:>8.4f} {share:>5.0f}% {cached:>7}")
+
+_pct, server_used, _l, _r, _h, _e = window_state(usage, "monthly", now)
+print(f"  {'':<30} {'-'*6} {'-'*9}")
+print(f"  {'local total':<30} {msgs:>6} {local_total:>9.4f}")
+if server_used:
+    print(f"  {'server reports':<30} {'':>6} {server_used:>9.2f}"
+          f"   (local accounts for {100*local_total/server_used:.0f}%)")
+if other:
+    print(f"\n  ${other:.2f} more went to providers not on the Go plan this window "
+          f"-- that spend is billed separately while Go budget sits unused.")
