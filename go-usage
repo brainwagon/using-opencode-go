@@ -7,7 +7,7 @@
 import sys, os, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from goquota import (WINDOWS, fetch, window_state, window_start,
-                     model_breakdown, PROVIDER)
+                     model_breakdown, models_available, PROVIDER)
 
 show_models = "--models" in sys.argv[1:]
 for arg in sys.argv[1:]:
@@ -34,7 +34,7 @@ if not show_models:
 
 start = window_start(usage, "monthly")
 try:
-    rows, other = model_breakdown(start)
+    rows, others = model_breakdown(start)
 except Exception as e:
     sys.exit(f"go-usage: could not read local history: {e}")
 
@@ -55,12 +55,32 @@ for r in rows:
     print(f"  {r['model']:<30} {r['messages']:>6} {r['cost']:>9.4f} "
           f"{per:>8.4f} {share:>5.0f}% {cached:>7}")
 
-_pct, server_used, _l, _r, _h, _e = window_state(usage, "monthly", now)
+_pct, server_used, _left, _r, _h, _e = window_state(usage, "monthly", now)
 print(f"  {'':<30} {'-'*6} {'-'*9}")
 print(f"  {'local total':<30} {msgs:>6} {local_total:>9.4f}")
 if server_used:
     print(f"  {'server reports':<30} {'':>6} {server_used:>9.2f}"
           f"   (local accounts for {100*local_total/server_used:.0f}%)")
-if other:
-    print(f"\n  ${other:.2f} more went to providers not on the Go plan this window "
-          f"-- that spend is billed separately while Go budget sits unused.")
+if not others:
+    sys.exit(0)
+
+# Paid spend outside the Go plan. Worth seeing next to unused Go budget, but only
+# the models Go actually serves could have been moved, so mark which those are.
+try:
+    on_go = models_available()
+except Exception:
+    on_go = set()
+
+# openrouter ids carry a vendor prefix (deepseek/deepseek-v4-flash); Go ids do not
+_basename = lambda m: m.rsplit("/", 1)[-1]
+other_total = sum(r["cost"] for r in others)
+movable = sum(r["cost"] for r in others if _basename(r["model"]) in on_go)
+print(f"\nPaid spend outside the Go plan, same window: ${other_total:.2f}")
+print("(billed to those accounts, separately from the Go subscription)\n")
+for r in others:
+    mark = "same model on Go" if _basename(r["model"]) in on_go else "no Go equivalent"
+    print(f"  {r['name']:<46} {r['messages']:>4} msg  {r['cost']:>8.4f}  {mark}")
+if on_go:
+    amt = f"${movable:.2f}" if movable >= 0.01 else f"${movable:.4f}"
+    print(f"\n  {amt} of that used a model Go already serves, so it could have come"
+          f"\n  out of the ${_left:.2f} of Go budget that expires unused instead.")

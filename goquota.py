@@ -43,6 +43,16 @@ DB = os.path.expanduser("~/.local/share/opencode/opencode.db")
 PROVIDER = "opencode-go"
 
 
+def models_available():
+    """Set of model ids the Go plan serves, for spotting substitutable spend."""
+    key = json.load(open(AUTH))["opencode-go"]["key"]
+    req = urllib.request.Request(ENDPOINT.replace("/usage", "/models"), headers={
+        "Authorization": "Bearer " + key,
+        "User-Agent": "go-usage/1.0",
+    })
+    return {m["id"] for m in json.load(urllib.request.urlopen(req, timeout=20))["data"]}
+
+
 def window_start(usage, key="monthly", now=None):
     """Approximate the start of a window from its reset time and nominal length."""
     import datetime as _dt
@@ -56,8 +66,9 @@ def model_breakdown(since):
 
     Reads opencode's own database, so this reflects only sessions run on this
     machine and prices computed locally -- see the README on reconciling with
-    the server's figure. Returns (go_rows, other_total) where go_rows is a list
-    of dicts sorted by cost, descending.
+    the server's figure. Returns (go_rows, other_rows), each a list of dicts
+    sorted by cost descending. Zero-cost providers (local ollama models) are
+    left out of other_rows, since they cost nothing to begin with.
     """
     import sqlite3, json as _json
     since_ms = int(since.timestamp() * 1000)
@@ -70,7 +81,7 @@ def model_breakdown(since):
     finally:
         con.close()
 
-    agg, other = {}, 0.0
+    agg, others = {}, {}
     for (blob,) in rows:
         try:
             d = _json.loads(blob)
@@ -81,7 +92,13 @@ def model_breakdown(since):
         if cost is None or not model:
             continue
         if provider != PROVIDER:
-            other += cost
+            if cost:
+                o = others.setdefault(f"{provider}/{model}",
+                                      {"model": model, "provider": provider,
+                                       "name": f"{provider}/{model}",
+                                       "messages": 0, "cost": 0.0})
+                o["messages"] += 1
+                o["cost"] += cost
             continue
         t = d.get("tokens") or {}
         cache = t.get("cache") or {}
@@ -92,4 +109,6 @@ def model_breakdown(since):
         e["input"] += t.get("input") or 0
         e["output"] += t.get("output") or 0
         e["cache_read"] += cache.get("read") or 0
-    return sorted(agg.values(), key=lambda r: r["cost"], reverse=True), other
+    key = lambda r: r["cost"]
+    return (sorted(agg.values(), key=key, reverse=True),
+            sorted(others.values(), key=key, reverse=True))

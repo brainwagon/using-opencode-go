@@ -138,8 +138,15 @@ Per-model usage this billing month (local data since 31 Aug 16:29 PDT)
   local total                       918    1.6318
   server reports                             4.20   (local accounts for 39%)
 
-  $0.88 more went to providers not on the Go plan this window -- that spend is
-  billed separately while Go budget sits unused.
+Paid spend outside the Go plan, same window: $0.88
+(billed to those accounts, separately from the Go subscription)
+
+  openrouter/openai/gpt-5.6-sol                    31 msg    0.7920  no Go equivalent
+  openrouter/deepseek/deepseek-v4-flash-0731       60 msg    0.0854  no Go equivalent
+  openrouter/deepseek/deepseek-v4-flash-vision-exp    2 msg    0.0038  same model on Go
+
+  $0.0038 of that used a model Go already serves, so it could have come
+  out of the $55.80 of Go budget that expires unused instead.
 ```
 
 - **$/msg** is the lever for strategy 1 above. The spread here is ~60x between
@@ -149,6 +156,21 @@ Per-model usage this billing month (local data since 31 Aug 16:29 PDT)
   strategy 2 directly. High is good. `kimi-k3` at 38% across only 3 messages is what a
   cold start looks like.
 - **share** is share of the *local* total, not of the cap.
+
+**The "paid spend outside the Go plan" section** answers a specific question: how much
+real money left your pocket during a window in which prepaid Go budget expired unused.
+OpenRouter and friends bill per token against their own balances, so that spend is
+genuinely additional to the $10 subscription. Local `ollama` models are excluded — they
+run on your own hardware and cost nothing, so they are not competing with Go budget.
+
+Each row is marked by whether Go serves the same model, because only those could actually
+have been moved. The match is on the bare model id after stripping any vendor prefix
+(`openrouter/deepseek/deepseek-v4-flash-vision-exp` matches Go's
+`deepseek-v4-flash-vision-exp`), and it is exact: a dated snapshot like
+`deepseek-v4-flash-0731` reads as "no Go equivalent" even though Go serves the
+undated `deepseek-v4-flash`, so treat that marking as conservative. A model with no Go
+equivalent at all — `gpt-5.6-sol` here — is not waste; there is simply nothing on the plan
+to switch it to.
 
 **This table comes from local data and will understate the server.** The usage API reports
 only three aggregate percentages — there is no per-model endpoint (`usage/models`,
