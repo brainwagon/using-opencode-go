@@ -110,7 +110,8 @@ multiplier, and the daily budget needed to finish the month at 100%.
 ./go-usage                    # quota summary for all three windows
 ./go-usage --models           # break down Go spend, and paid spend off the plan
 ./go-usage --all              # every model used, all providers, with cost
-./go-usage --all --days 365   # widen either breakdown to an arbitrary window
+./go-usage --all --days 365   # widen any breakdown to an arbitrary window
+./go-usage --catalog          # the plan's paid models, priced against your usage
 ```
 
 No dependencies beyond the Python 3 standard library.
@@ -179,6 +180,53 @@ have been moved. The match is on the bare model id after stripping any vendor pr
 undated `deepseek-v4-flash`, so treat that marking as conservative. A model with no Go
 equivalent at all — `gpt-5.6-sol` here — is not waste; there is simply nothing on the plan
 to switch it to.
+
+### What the plan's models cost
+
+`--catalog` lists every paid model the Go plan serves, priced against the shape of your own
+messages rather than against an abstract million tokens:
+
+```
+Go plan models priced against your own message shape:
+  2,241 input + 485 output + 48,558 cached tokens
+  (mean of 1,048 local messages, this billing month)
+
+  model                           in $/M  out $/M  cache $/M  est $/msg     rel  msgs/day
+  muse-spark-1.3-contributor       0.100    0.200     0.0020     0.0004    1.0x     6,624
+  mimo-v2-omni                     0.140    0.280     0.0028     0.0006    1.4x     4,731
+  deepseek-v4-flash                0.140    0.280     0.0280     0.0018    4.3x     1,531
+  glm-5.3-flash                    0.150    0.500     0.0300     0.0020    4.9x     1,361
+  minimax-m3                       0.300    1.200     0.0600     0.0042   10.0x       664
+  glm-5.2                          1.400    4.400     0.2600     0.0179   42.8x       154
+  qwen3.8-max                      2.000    6.000     0.2500     0.0195   46.7x       141
+  grok-4.5                         2.000    6.000     0.3000     0.0220   52.5x       126
+  kimi-k3                          3.000   15.000     0.3000     0.0286   68.3x        96
+  qwen3.7-max                      2.500    7.500     0.5000     0.0335   80.1x        82
+
+  msgs/day is what $2.77/day buys -- the pace that would exactly use
+  the $55.80 of Go budget left before reset.
+```
+
+- **est $/msg** applies each model's rates to your average message. Because your traffic is
+  ~95% cached reads, the `cache $/M` column drives this far more than the headline input
+  price — note `deepseek-v4-flash` and `deepseek-flash` having near-identical input rates
+  but a 2.4x spread in real cost.
+- **rel** is cost relative to the cheapest paid model on the plan. The full spread is ~80x.
+- **msgs/day** is how many such messages the remaining daily budget buys. This is the
+  number that makes the plan concrete: even `kimi-k3`, the most expensive model here, still
+  affords ~96 messages a day out of budget that is currently expiring unused.
+
+Availability comes live from the Go `/models` endpoint. Pricing comes from the
+[models.dev](https://models.dev) registry — the one opencode itself uses — cached for a day
+under `$XDG_CACHE_HOME/go-usage-registry.json`, since the payload is ~4.5MB. Override with
+`GO_REGISTRY` / `GO_REGISTRY_CACHE`.
+
+**Two caveats worth respecting.** The registry can disagree with the plan's published
+table: it lists `deepseek-v4-flash` cached reads at $0.028/M where the docs say $0.0028/M, a
+10x difference on the column that dominates your costs. And some available models carry no
+registry pricing at all — `qwen3.8-flash`, which you actually use, is among them. A model
+with an all-zero cost block is reported as unpriced rather than free, so it cannot silently
+become the baseline for `rel`. Check any number you are about to make a decision on.
 
 ### Every model used
 

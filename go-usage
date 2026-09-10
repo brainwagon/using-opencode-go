@@ -4,7 +4,7 @@ import sys, os, argparse, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from goquota import (WINDOWS, fetch, window_state, window_start, model_breakdown,
                      all_models, models_available, format_hours, format_when,
-                     PROVIDER)
+                     pricing_catalog, average_shape, cost_per_message, PROVIDER)
 
 p = argparse.ArgumentParser(
     description="Remaining opencode Go quota, with optional usage breakdowns.")
@@ -12,6 +12,8 @@ p.add_argument("--models", action="store_true",
                help=f"break down {PROVIDER} spend, and paid spend off the plan")
 p.add_argument("--all", action="store_true",
                help="list every model used, all providers, with estimated cost")
+p.add_argument("--catalog", action="store_true",
+               help="list the plan's paid models with pricing and relative cost")
 p.add_argument("--days", type=float, metavar="N",
                help="window for the breakdowns (default: the current billing month)")
 args = p.parse_args()
@@ -38,13 +40,68 @@ for key, (label, cap, _days) in WINDOWS.items():
               f"for the remaining {hours_left/24:.1f} days")
     print()
 
-if args.all or args.models:
+if args.all or args.models or args.catalog:
     if args.days:
         start = now - datetime.timedelta(days=args.days)
         period = f"last {args.days:g} days"
     else:
         start = window_start(usage, "monthly")
         period = "this billing month"
+
+if args.catalog:
+    try:
+        available, prices = models_available(), pricing_catalog()
+    except Exception as e:
+        sys.exit(f"go-usage: could not load model pricing: {e}")
+    shape = average_shape(start)
+    if shape is None:
+        # nothing local to calibrate against; price a plausible generic message
+        shape = {"input": 2000, "output": 500, "cache_read": 20000, "messages": 0}
+        basis = "a generic 2K input / 500 output / 20K cached message"
+    else:
+        basis = (f"{shape['input']:,.0f} input + {shape['output']:,.0f} output + "
+                 f"{shape['cache_read']:,.0f} cached tokens\n  "
+                 f"(mean of {shape['messages']:,} local messages, {period})")
+
+    rows = []
+    for mid in available:
+        p_ = prices.get(mid)
+        # an all-zero cost block means unpriced in the registry, not free: treat it
+        # as missing rather than letting it become a zero baseline for `rel`
+        if not p_ or not (p_["cost"].get("input") or p_["cost"].get("output")):
+            continue
+        rows.append({"id": mid, "cost": p_["cost"], "context": p_["context"],
+                     "per_msg": cost_per_message(p_["cost"], shape)})
+    rows.sort(key=lambda x: x["per_msg"])
+    if not rows:
+        sys.exit("go-usage: no pricing found for any available model")
+
+    _p, _u, left_m, _r, hours_m, _e = window_state(usage, "monthly", now)
+    daily = left_m / (hours_m / 24) if hours_m > 0 else 0
+    cheapest = rows[0]["per_msg"] or 1e-12
+
+    print(f"Go plan models priced against your own message shape:\n  {basis}\n")
+    print(f"  {'model':<30} {'in $/M':>7} {'out $/M':>8} {'cache $/M':>10} "
+          f"{'est $/msg':>10} {'rel':>7} {'msgs/day':>9}")
+    for x in rows:
+        c = x["cost"]
+        cache = c.get("cache_read", c.get("input", 0))
+        per_day = int(daily / x["per_msg"]) if x["per_msg"] else 0
+        print(f"  {x['id']:<30} {c.get('input',0):>7.3f} {c.get('output',0):>8.3f} "
+              f"{cache:>10.4f} {x['per_msg']:>10.4f} "
+              f"{x['per_msg']/cheapest:>6.1f}x {per_day:>9,}")
+    print(f"\n  msgs/day is what ${daily:.2f}/day buys -- the pace that would exactly "
+          f"use\n  the ${left_m:.2f} of Go budget left before reset.")
+    priced = {x["id"] for x in rows}
+    missing = sorted(m for m in available if m not in priced)
+    if missing:
+        print(f"\n  no published pricing in the registry for: {', '.join(missing)}")
+    print("\n  Availability is live from the Go API; prices come from the models.dev\n"
+          "  registry and can disagree with the plan's published table -- check any\n"
+          "  number you are about to make a decision on.")
+    if not (args.all or args.models):
+        sys.exit(0)
+    print()
 
 if args.all:
     try:

@@ -172,3 +172,85 @@ def model_breakdown(since):
     key = lambda r: r["cost"]
     return (sorted(agg.values(), key=key, reverse=True),
             sorted(others.values(), key=key, reverse=True))
+
+
+REGISTRY = os.environ.get("GO_REGISTRY", "https://models.dev/api.json")
+_CACHE_HOME = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+REGISTRY_CACHE = os.environ.get("GO_REGISTRY_CACHE",
+                                os.path.join(_CACHE_HOME, "go-usage-registry.json"))
+REGISTRY_TTL = 24 * 3600
+
+
+def pricing_catalog():
+    """Map model id -> cost block ($/M tokens) from the models.dev registry.
+
+    The Go /models endpoint lists availability but carries no pricing, and the
+    published plan table is not machine readable, so pricing comes from the
+    registry opencode itself uses. Cached for a day: the payload is ~4.5MB.
+    """
+    import time
+    raw = None
+    try:
+        if time.time() - os.path.getmtime(REGISTRY_CACHE) < REGISTRY_TTL:
+            raw = json.load(open(REGISTRY_CACHE))
+    except (OSError, ValueError):
+        raw = None
+    if raw is None:
+        req = urllib.request.Request(REGISTRY, headers={"User-Agent": "go-usage/1.0"})
+        raw = json.load(urllib.request.urlopen(req, timeout=60))
+        try:
+            os.makedirs(os.path.dirname(REGISTRY_CACHE), exist_ok=True)
+            json.dump(raw, open(REGISTRY_CACHE, "w"))
+        except OSError:
+            pass  # a working cache is nice, not required
+
+    # prefer opencode's own entry for a model, fall back to any provider carrying it
+    out = {}
+    for pid, prov in raw.items():
+        for mid, m in (prov.get("models") or {}).items():
+            cost = m.get("cost")
+            if not cost:
+                continue
+            if mid not in out or pid == "opencode":
+                out[mid] = {"cost": cost, "provider": pid,
+                            "name": m.get("name") or mid,
+                            "context": (m.get("limit") or {}).get("context")}
+    return out
+
+
+def average_shape(since):
+    """Mean tokens per assistant message from local history: the shape of *your*
+    requests, used to price models against how you actually use them."""
+    import sqlite3
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
+    try:
+        rows = con.execute(
+            "SELECT data FROM message WHERE time_created >= ? AND data LIKE '%\"cost\"%'",
+            (int(since.timestamp() * 1000),)).fetchall()
+    finally:
+        con.close()
+    n = 0
+    tot = {"input": 0, "output": 0, "cache_read": 0}
+    for (blob,) in rows:
+        try:
+            d = json.loads(blob)
+        except ValueError:
+            continue
+        if not d.get("modelID"):
+            continue
+        t = d.get("tokens") or {}
+        n += 1
+        tot["input"] += t.get("input") or 0
+        tot["output"] += t.get("output") or 0
+        tot["cache_read"] += (t.get("cache") or {}).get("read") or 0
+    if not n:
+        return None
+    return {k: v / n for k, v in tot.items()} | {"messages": n}
+
+
+def cost_per_message(cost, shape):
+    """Estimated $ for one message of `shape` at `cost` ($ per million tokens)."""
+    read = cost.get("cache_read", cost.get("input", 0))
+    return (shape["input"] * cost.get("input", 0)
+            + shape["output"] * cost.get("output", 0)
+            + shape["cache_read"] * read) / 1_000_000
