@@ -14,7 +14,16 @@ p.add_argument("--all", action="store_true",
                help="list every model used, all providers, with estimated cost")
 p.add_argument("--catalog", action="store_true",
                help="list the plan's paid models with pricing and relative cost")
-p.add_argument("--days", type=float, metavar="N",
+def positive_days(s):
+    try:
+        n = float(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {s!r}")
+    if not 0 < n <= 3650:
+        raise argparse.ArgumentTypeError(f"must be between 0 and 3650, got {s}")
+    return n
+
+p.add_argument("--days", type=positive_days, metavar="N",
                help="window for the breakdowns (default: the current billing month)")
 args = p.parse_args()
 
@@ -41,8 +50,8 @@ for key, (label, cap, _days) in WINDOWS.items():
     print()
 
 if args.all or args.models or args.catalog:
-    if args.days:
-        start = now - datetime.timedelta(days=args.days)
+    if args.days is not None:
+        start =now - datetime.timedelta(days=args.days)
         period = f"last {args.days:g} days"
     else:
         start = window_start(usage, "monthly")
@@ -53,7 +62,10 @@ if args.catalog:
         available, prices = models_available(), pricing_catalog()
     except Exception as e:
         sys.exit(f"go-usage: could not load model pricing: {e}")
-    shape = average_shape(start)
+    try:
+        shape = average_shape(start)
+    except Exception:
+        shape = None  # no readable local history; fall back to a generic shape
     if shape is None:
         # nothing local to calibrate against; price a plausible generic message
         shape = {"input": 2000, "output": 500, "cache_read": 20000, "messages": 0}
@@ -66,9 +78,7 @@ if args.catalog:
     rows = []
     for mid in available:
         p_ = prices.get(mid)
-        # an all-zero cost block means unpriced in the registry, not free: treat it
-        # as missing rather than letting it become a zero baseline for `rel`
-        if not p_ or not (p_["cost"].get("input") or p_["cost"].get("output")):
+        if not p_:
             continue
         rows.append({"id": mid, "cost": p_["cost"], "context": p_["context"],
                      "source": p_["provider"],
@@ -117,17 +127,19 @@ if args.all:
     print(f"All models used, {period} "
           f"(since {format_when(start, now)}, local estimates)\n")
     if not rows:
-        sys.exit("  nothing recorded locally in this window")
-    print(f"  {'provider/model':<52} {'msgs':>6} {'cost':>9} {'$/msg':>8}")
-    for r_ in rows:
-        per = r_["cost"] / r_["messages"] if r_["messages"] else 0
-        print(f"  {r_['name']:<52} {r_['messages']:>6} {r_['cost']:>9.4f} {per:>8.4f}")
-    print(f"  {'':<52} {'-'*6} {'-'*9}")
-    print(f"  {'total':<52} {sum(x['messages'] for x in rows):>6} "
-          f"{sum(x['cost'] for x in rows):>9.4f}")
-    free = [x for x in rows if not x["cost"]]
-    if free:
-        print(f"\n  {len(free)} of these cost nothing (local or free-tier models).")
+        print("  nothing recorded locally in this window")
+    else:
+        print(f"  {'provider/model':<52} {'msgs':>6} {'cost':>9} {'$/msg':>8}")
+        for r_ in rows:
+            per = r_["cost"] / r_["messages"] if r_["messages"] else 0
+            print(f"  {r_['name']:<52} {r_['messages']:>6} {r_['cost']:>9.4f} "
+                  f"{per:>8.4f}")
+        print(f"  {'':<52} {'-'*6} {'-'*9}")
+        print(f"  {'total':<52} {sum(x['messages'] for x in rows):>6} "
+              f"{sum(x['cost'] for x in rows):>9.4f}")
+        free = [x for x in rows if not x["cost"]]
+        if free:
+            print(f"\n  {len(free)} of these cost nothing (local or free-tier models).")
     if not args.models:
         sys.exit(0)
     print()
@@ -160,7 +172,9 @@ for r in rows:
 _pct, server_used, _left, _r, _h, _e = window_state(usage, "monthly", now)
 print(f"  {'':<30} {'-'*6} {'-'*9}")
 print(f"  {'local total':<30} {msgs:>6} {local_total:>9.4f}")
-if server_used:
+# the server figure covers the whole billing month, so it only compares with a
+# local total taken over that same window
+if server_used and args.days is None:
     print(f"  {'server reports':<30} {'':>6} {server_used:>9.2f}"
           f"   (local accounts for {100*local_total/server_used:.0f}%)")
 if not others:

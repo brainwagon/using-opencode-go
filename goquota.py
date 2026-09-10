@@ -216,7 +216,9 @@ def pricing_catalog():
         r = rank.get(pid, last)
         for mid, m in (prov.get("models") or {}).items():
             cost = m.get("cost")
-            if not cost:
+            # an all-zero cost block means unpriced in the registry, not free: skip
+            # it so it can't outrank a real price from a lower-ranked vendor
+            if not cost or not (cost.get("input") or cost.get("output")):
                 continue
             if mid not in out or r < out[mid]["rank"]:
                 out[mid] = {"cost": cost, "provider": pid, "rank": r,
