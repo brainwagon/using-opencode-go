@@ -286,7 +286,8 @@ time, so it is approximate at the boundary in the same way the pace math is.
 
 ### Configuration
 
-Both scripts share `goquota.py`, which holds the constants in one place:
+Both scripts share `goquota.py` (API access, local history, formatting) and, for
+notifications, `notify.py`. `goquota.py` holds the constants in one place:
 
 - `WINDOWS` — maps each window to its label, dollar cap, and length in days. **Update the
   caps here if opencode changes the plan**, since the API reports only percentages and
@@ -303,6 +304,8 @@ Nothing is hardcoded to a particular machine or user. Paths follow `XDG_DATA_HOM
 | `GO_DB`          | `$XDG_DATA_HOME/opencode/opencode.db`    | history for `--models`         |
 | `GO_STATE`       | `$XDG_CACHE_HOME/go-alert.json`          | `go-alert`'s dedupe stamp      |
 | `GO_ENDPOINT`    | `https://opencode.ai/zen/go/v1/usage`    | the usage API                  |
+| `GO_REGISTRY`    | `https://models.dev/api.json`            | pricing for `--catalog`        |
+| `GO_REGISTRY_CACHE` | `$XDG_CACHE_HOME/go-usage-registry.json` | cached registry (1 day TTL) |
 | `GO_POWERSHELL`  | auto-detected                            | `powershell.exe`               |
 
 `powershell.exe` is found by trying `GO_POWERSHELL`, then `PATH`, then globbing
