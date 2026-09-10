@@ -132,14 +132,15 @@ monthly: $  4.20 used / $60.00  -> $ 55.80 left  (7%, 0.21x pace)
 
 ### Configuration
 
-Constants at the top of the script:
+Both scripts share `goquota.py`, which holds the constants in one place:
 
 - `AUTH` — path to opencode's credential file, default
-  `~/.local/share/opencode/auth.json`. The script reads the `opencode-go` key from it; no
-  key is stored in the script itself.
-- `CAPS` — the dollar caps per window. **Update these if opencode changes the plan**, since
-  the API reports only percentages and cannot tell you the caps moved.
-- `WINDOW_DAYS` — window lengths used for the pace math only.
+  `~/.local/share/opencode/auth.json`. The `opencode-go` key is read from it at runtime; no
+  key is stored in this repo.
+- `ENDPOINT` — the usage URL.
+- `WINDOWS` — maps each window to its label, dollar cap, and length in days. **Update the
+  caps here if opencode changes the plan**, since the API reports only percentages and
+  cannot tell you the caps moved.
 
 ### Known limitations
 
@@ -151,6 +152,74 @@ Constants at the top of the script:
 - The endpoint is undocumented and may change or disappear without notice.
 - A `User-Agent` header is required. Cloudflare returns `403 Forbidden` for Python's
   default urllib agent.
+
+## Alerting from cron (WSL2)
+
+`go-alert` checks your monthly pace and raises a **Windows toast notification** when you
+are underspending. It is meant to be run from cron.
+
+```
+./go-alert
+```
+
+It prints nothing and exits 0 when there is nothing to say, so cron stays quiet. When it
+does fire you get a toast reading:
+
+```
+opencode Go underused
+0.21x pace - $55.80 unused with 20.2 days left. Spend $2.77/day to use it all.
+```
+
+### Tuning
+
+Configured entirely by environment variable, so the cron line is the only thing to edit:
+
+| Variable              | Default | Meaning                                              |
+| --------------------- | ------- | ---------------------------------------------------- |
+| `GO_PACE_TARGET`      | `0.6`   | Alert when pace drops below this multiplier           |
+| `GO_MIN_ELAPSED`      | `20`    | Stay silent until this % of the month has elapsed     |
+| `GO_ALERT_INTERVAL_H` | `24`    | Minimum hours between notifications                   |
+
+`GO_MIN_ELAPSED` exists because pace is meaningless in the first hours after a reset — a
+single day of light use looks like a catastrophic shortfall. `GO_ALERT_INTERVAL_H` is
+enforced with a stamp in `~/.cache/go-alert.json`, so you can run the job hourly and still
+be told at most once a day. Delete that file to re-arm immediately.
+
+### Installing the cron job
+
+```
+crontab -e
+```
+
+```cron
+# Check opencode Go pace every weekday at 09:00 and 17:00
+0 9,17 * * 1-5 /home/markv/using-opencode-go/go-alert
+```
+
+Absolute path is required: cron runs with `PATH=/usr/bin:/bin`, which contains neither the
+script nor `powershell.exe`. `go-alert` hardcodes the full path to `powershell.exe` for the
+same reason.
+
+### WSL2 specifics
+
+These were verified on this machine, but they are the things that break on a fresh WSL
+install:
+
+- **cron must actually be running.** WSL2 only runs an init system when systemd is enabled.
+  This machine has `systemd=true` in `/etc/wsl.conf` and `cron.service` is enabled and
+  active. Without systemd, cron never starts and the job silently never fires. Check with
+  `systemctl status cron`; enable with `sudo systemctl enable --now cron`.
+- **cron only runs while the distro is running.** WSL shuts the VM down a few seconds after
+  the last shell exits, taking cron with it. A missed schedule is *not* made up on next
+  boot. If you want checks while no terminal is open, drive it from Windows Task Scheduler
+  instead (`wsl.exe -d <distro> -e /home/markv/using-opencode-go/go-alert`), which starts
+  the distro on demand.
+- **`notify-send` does not work here.** WSLg provides a display but no notification daemon —
+  it fails with `org.freedesktop.Notifications was not provided by any .service files`.
+  Hence the PowerShell toast, which needs no extra packages (BurntToast is *not* required).
+- Toasts are attributed to Windows PowerShell and land in the Action Center. If none
+  appear, check Focus Assist / Do Not Disturb and that notifications are enabled for
+  Windows PowerShell.
 
 ## Reconciling with `opencode stats`
 
