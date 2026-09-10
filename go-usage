@@ -71,6 +71,7 @@ if args.catalog:
         if not p_ or not (p_["cost"].get("input") or p_["cost"].get("output")):
             continue
         rows.append({"id": mid, "cost": p_["cost"], "context": p_["context"],
+                     "source": p_["provider"],
                      "per_msg": cost_per_message(p_["cost"], shape)})
     rows.sort(key=lambda x: x["per_msg"])
     if not rows:
@@ -81,13 +82,14 @@ if args.catalog:
     cheapest = rows[0]["per_msg"] or 1e-12
 
     print(f"Go plan models priced against your own message shape:\n  {basis}\n")
-    print(f"  {'model':<30} {'in $/M':>7} {'out $/M':>8} {'cache $/M':>10} "
+    print(f"  {'model':<32} {'in $/M':>7} {'out $/M':>8} {'cache $/M':>10} "
           f"{'est $/msg':>10} {'rel':>7} {'msgs/day':>9}")
     for x in rows:
         c = x["cost"]
         cache = c.get("cache_read", c.get("input", 0))
         per_day = int(daily / x["per_msg"]) if x["per_msg"] else 0
-        print(f"  {x['id']:<30} {c.get('input',0):>7.3f} {c.get('output',0):>8.3f} "
+        label = x["id"] if x["source"] == PROVIDER else x["id"] + " *"
+        print(f"  {label:<32} {c.get('input',0):>7.3f} {c.get('output',0):>8.3f} "
               f"{cache:>10.4f} {x['per_msg']:>10.4f} "
               f"{x['per_msg']/cheapest:>6.1f}x {per_day:>9,}")
     print(f"\n  msgs/day is what ${daily:.2f}/day buys -- the pace that would exactly "
@@ -95,10 +97,14 @@ if args.catalog:
     priced = {x["id"] for x in rows}
     missing = sorted(m for m in available if m not in priced)
     if missing:
-        print(f"\n  no published pricing in the registry for: {', '.join(missing)}")
-    print("\n  Availability is live from the Go API; prices come from the models.dev\n"
-          "  registry and can disagree with the plan's published table -- check any\n"
-          "  number you are about to make a decision on.")
+        print(f"\n  no pricing in the registry for: {', '.join(missing)}")
+    borrowed = sorted({x["source"] for x in rows if x["source"] != PROVIDER})
+    if borrowed:
+        print(f"\n  * priced from another vendor ({', '.join(borrowed)}) because the "
+              f"registry\n    carries no {PROVIDER} entry -- treat those rows as "
+              f"indicative only.")
+    print(f"\n  Availability is live from the Go API; prices come from the models.dev\n"
+          f"  registry's {PROVIDER} entry, which prices this plan specifically.")
     if not (args.all or args.models):
         sys.exit(0)
     print()

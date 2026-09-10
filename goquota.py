@@ -175,6 +175,8 @@ def model_breakdown(since):
 
 
 REGISTRY = os.environ.get("GO_REGISTRY", "https://models.dev/api.json")
+# registry providers to trust for Go pricing, best first
+PREFERENCE = (PROVIDER, "opencode")
 _CACHE_HOME = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
 REGISTRY_CACHE = os.environ.get("GO_REGISTRY_CACHE",
                                 os.path.join(_CACHE_HOME, "go-usage-registry.json"))
@@ -204,15 +206,20 @@ def pricing_catalog():
         except OSError:
             pass  # a working cache is nice, not required
 
-    # prefer opencode's own entry for a model, fall back to any provider carrying it
+    # The registry carries a provider entry for the Go plan itself, which prices the
+    # plan rather than some other vendor's hosting of the same model -- always prefer
+    # it. PREFERENCE is most- to least-authoritative; anything else is a last resort.
+    rank = {pid: i for i, pid in enumerate(PREFERENCE)}
+    last = len(PREFERENCE)
     out = {}
     for pid, prov in raw.items():
+        r = rank.get(pid, last)
         for mid, m in (prov.get("models") or {}).items():
             cost = m.get("cost")
             if not cost:
                 continue
-            if mid not in out or pid == "opencode":
-                out[mid] = {"cost": cost, "provider": pid,
+            if mid not in out or r < out[mid]["rank"]:
+                out[mid] = {"cost": cost, "provider": pid, "rank": r,
                             "name": m.get("name") or mid,
                             "context": (m.get("limit") or {}).get("context")}
     return out
