@@ -55,9 +55,12 @@ def main():
     days_left = hours_left / 24
     msg = (f"{pace:.2f}x pace - ${left:.2f} unused with {days_left:.1f} days left. "
            f"Spend ${left/days_left:.2f}/day to use it all.")
-    if notify("opencode Go underused", msg):
-        record(now)
-        print(f"go-alert: notified via {BACKEND} ({msg})")
+    if not notify("opencode Go underused", msg):
+        # do not record: a failed notification should retry, and a non-zero exit
+        # makes cron mail you rather than failing silently
+        return 3
+    record(now)
+    print(f"go-alert: notified via {BACKEND} ({msg})")
     return 0
 
 

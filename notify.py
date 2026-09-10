@@ -5,8 +5,10 @@ Three backends, because toast delivery is unreliable for non-packaged apps:
   msgbox  a modal dialog. Confirmed working on this machine. Always renders,
           but steals focus and blocks until dismissed.
   balloon a tray balloon tip via NotifyIcon. No AppID registration needed.
-  toast   a native Windows toast. Silently dropped on this machine: the API
-          reports success and Setting=Enabled, but nothing renders.
+  toast   DISABLED. Native toasts are silently dropped on this machine: the API
+          reports success and Setting=Enabled, but nothing renders. The
+          implementation is kept below for reference but is not selectable,
+          because a backend that fails silently is worse than no backend.
 
 Select with the GO_NOTIFY env var. Default is msgbox.
 """
@@ -55,7 +57,7 @@ $n.Dispose()
 ''', timeout=seconds + 30)
 
 
-def _toast(title, message):
+def _toast(title, message):  # noqa: F841 - disabled, see module docstring
     return _run(f'''
 [Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime] | Out-Null
 $t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
@@ -67,7 +69,8 @@ $n=[Windows.UI.Notifications.ToastNotification]::new($t)
 ''')
 
 
-BACKENDS = {"msgbox": _msgbox, "balloon": _balloon, "toast": _toast}
+# _toast is deliberately absent: it reports success while rendering nothing.
+BACKENDS = {"msgbox": _msgbox, "balloon": _balloon}
 
 
 def notify(title, message):

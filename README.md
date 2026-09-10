@@ -179,7 +179,7 @@ Configured entirely by environment variable, so the cron line is the only thing 
 | `GO_PACE_TARGET`      | `0.6`   | Alert when pace drops below this multiplier           |
 | `GO_MIN_ELAPSED`      | `20`    | Stay silent until this % of the month has elapsed     |
 | `GO_ALERT_INTERVAL_H` | `24`    | Minimum hours between notifications                   |
-| `GO_NOTIFY`           | `msgbox`| Notification backend: `msgbox`, `balloon`, or `toast`  |
+| `GO_NOTIFY`           | `msgbox`| Notification backend: `msgbox` or `balloon`           |
 
 `GO_MIN_ELAPSED` exists because pace is meaningless in the first hours after a reset — a
 single day of light use looks like a catastrophic shortfall. `GO_ALERT_INTERVAL_H` is
@@ -210,28 +210,28 @@ three backends, chosen with `GO_NOTIFY`:
 | --------- | -------------------------------- | ----------------------------------------- |
 | `msgbox`  | modal `MessageBox` dialog        | **works** (default)                       |
 | `balloon` | tray balloon via `NotifyIcon`    | untested/unconfirmed                      |
-| `toast`   | native `Windows.UI.Notifications`| **silently dropped** — see below          |
+| `toast`   | native `Windows.UI.Notifications`| **disabled** — silently dropped, see below |
 
 `msgbox` is the default because it is the only one confirmed to render here. The tradeoff
 is that it steals focus and blocks until dismissed, which is tolerable twice a day but
 would be obnoxious hourly.
 
-**The toast trap.** Native toasts fail *silently* for non-packaged apps. The API call
-succeeds, `$notifier.Setting` reports `Enabled`, and nothing whatsoever appears on screen.
-There is no exception to catch and no error to log, so a cron job using toasts looks
-exactly like a cron job that never ran. Registering an AppUserModelId under
-`HKCU\SOFTWARE\Classes\AppUserModelId\opencode.Go.Monitor` got Windows to create a
-notification-settings entry for the app, but still produced no visible toast. Diagnostics
-ruled out the usual suspects: no Focus Assist / Do Not Disturb active, no global toast
-toggle disabled, `explorer.exe` present in the same session, and the process holding an
-interactive `WinSta0` window station. If you want to keep chasing it, installing the
-BurntToast module is the next thing to try; `msgbox` sidesteps the issue entirely.
+Selecting an unavailable backend is refused loudly and exits non-zero, so cron mails you
+instead of failing quietly.
 
-To remove the registered AppID:
+**Why toast is disabled.** Native toasts fail *silently* for non-packaged apps. The API
+call succeeds, `$notifier.Setting` reports `Enabled`, and nothing whatsoever appears on
+screen. There is no exception to catch and no error to log, so a cron job using toasts
+looks exactly like a cron job that never ran — which is strictly worse than having no
+notifier at all. The `_toast` implementation is kept in `notify.py` for reference but is
+not listed in `BACKENDS`, so it cannot be selected by accident.
 
-```powershell
-Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\opencode.Go.Monitor" -Recurse
-```
+Diagnostics ruled out the usual suspects: no Focus Assist / Do Not Disturb active, no
+global toast toggle disabled, `explorer.exe` present in the same session, and the process
+holding an interactive `WinSta0` window station. Registering an AppUserModelId did get
+Windows to create a notification-settings entry for the app, but still produced no visible
+toast; that key has since been removed and the repo leaves no registry state behind. If
+you ever want to revisit it, installing the BurntToast module is the next thing to try.
 
 ### WSL2 specifics
 
