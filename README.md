@@ -357,8 +357,8 @@ Configured entirely by environment variable, so the cron line is the only thing 
 
 `GO_MIN_ELAPSED` exists because pace is meaningless in the first hours after a reset — a
 single day of light use looks like a catastrophic shortfall. `GO_ALERT_INTERVAL_H` is
-enforced with a stamp in `~/.cache/go-alert.json`, so you can run the job hourly and still
-be told at most once a day. Delete that file to re-arm immediately.
+enforced with a stamp file (`GO_STATE`, above), so you can run the job hourly and still be
+told at most once a day. Delete that file to re-arm immediately.
 
 ### Installing the cron job
 
