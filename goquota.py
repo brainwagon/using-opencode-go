@@ -29,6 +29,18 @@ def fetch():
     return json.load(urllib.request.urlopen(req, timeout=20))["usage"]
 
 
+def format_hours(hours):
+    """Render a duration: hours under a day, days and hours beyond that."""
+    if hours < 0:
+        return "overdue"
+    if hours < 24:
+        return f"{hours:.1f}h"
+    # round to whole hours first, so 47.6h reads "2d 0h" and never "1d 24h"
+    whole = round(hours)
+    days, rem = divmod(whole, 24)
+    return f"{days}d {rem}h"
+
+
 def window_state(usage, key, now=None):
     """Return (pct, dollars_used, dollars_left, reset_dt, hours_left, elapsed_pct)."""
     now = now or datetime.datetime.now(datetime.timezone.utc)

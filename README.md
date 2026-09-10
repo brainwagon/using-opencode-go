@@ -120,10 +120,10 @@ opencode Go usage @ 2026-09-10 12:19 PDT
          resets Thu 10 Sep 15:28 PDT (in 3.2h)  status=ok
 
  weekly: $  0.60 used / $30.00  -> $ 29.40 left  (2%, 0.04x pace)
-         resets Sun 13 Sep 17:00 PDT (in 76.7h)  status=ok
+         resets Sun 13 Sep 17:00 PDT (in 3d 4h)  status=ok
 
 monthly: $  4.20 used / $60.00  -> $ 55.80 left  (7%, 0.21x pace)
-         resets Wed 30 Sep 16:29 PDT (in 484.2h)  status=ok
+         resets Wed 30 Sep 16:29 PDT (in 20d 4h)  status=ok
          budget to fully use: $2.77/day for the remaining 20.2 days
 ```
 
@@ -196,6 +196,8 @@ time, so it is approximate at the boundary in the same way the pace math is.
   the cap; `0.21x` means you are on course to use about a fifth of it.
 - **status** — passed through from the API (`ok`, or presumably a warning state near the
   cap).
+- **time to reset** — hours with one decimal under a day (`3.2h`), whole days and hours
+  beyond that (`20d 4h`).
 - **budget to fully use** — monthly only: the daily spend that would land you at exactly
   100% on reset day.
 

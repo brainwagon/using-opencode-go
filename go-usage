@@ -7,7 +7,7 @@
 import sys, os, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from goquota import (WINDOWS, fetch, window_state, window_start,
-                     model_breakdown, models_available, PROVIDER)
+                     model_breakdown, models_available, format_hours, PROVIDER)
 
 show_models = "--models" in sys.argv[1:]
 for arg in sys.argv[1:]:
@@ -30,7 +30,7 @@ for key, (label, cap, _days) in WINDOWS.items():
     print(f"{label:>7}: ${used:6.2f} used / ${cap:5.2f}  "
           f"-> ${left:6.2f} left  ({pct}%, {burn})")
     print(f"{'':>7}  resets {reset.astimezone():%a %d %b %H:%M %Z} "
-          f"(in {hours_left:.1f}h)  status={usage[key]['status']}")
+          f"(in {format_hours(hours_left)})  status={usage[key]['status']}")
     if key == "monthly" and elapsed > 1:
         print(f"{'':>7}  budget to fully use: ${left/(hours_left/24):.2f}/day "
               f"for the remaining {hours_left/24:.1f} days")
