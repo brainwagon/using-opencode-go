@@ -12,15 +12,41 @@ Three backends, because toast delivery is unreliable for non-packaged apps:
 
 Select with the GO_NOTIFY env var. Default is msgbox.
 """
-import os, json, subprocess, sys
+import os, json, subprocess, sys, shutil, glob
 
-# cron runs with PATH=/usr/bin:/bin, so this must be absolute
-POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 APP_ID = "opencode.Go.Monitor"
 BACKEND = os.environ.get("GO_NOTIFY", "msgbox")
 
 
+def find_powershell():
+    """Locate powershell.exe.
+
+    cron runs with PATH=/usr/bin:/bin, where powershell.exe is not reachable, so
+    falling back to a filesystem search matters more than it looks. Windows is
+    not always on C:, hence the glob over every mounted drive.
+    """
+    override = os.environ.get("GO_POWERSHELL")
+    if override:
+        return override
+    found = shutil.which("powershell.exe")
+    if found:
+        return found
+    for pattern in ("/mnt/*/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                    "/mnt/*/Program Files/PowerShell/*/pwsh.exe"):
+        for path in sorted(glob.glob(pattern)):
+            if os.access(path, os.X_OK):
+                return path
+    return None
+
+
+POWERSHELL = find_powershell()
+
+
 def _run(script, timeout=60):
+    if POWERSHELL is None:
+        print("notify: could not find powershell.exe; set GO_POWERSHELL to its path",
+              file=sys.stderr)
+        return False
     try:
         subprocess.run([POWERSHELL, "-NoProfile", "-Command", script],
                        check=True, timeout=timeout,

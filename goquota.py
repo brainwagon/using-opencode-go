@@ -5,8 +5,10 @@ plan documentation and must be updated by hand if opencode changes the plan.
 """
 import json, urllib.request, datetime, os
 
-AUTH = os.path.expanduser("~/.local/share/opencode/auth.json")
-ENDPOINT = "https://opencode.ai/zen/go/v1/usage"
+# opencode stores its data under XDG_DATA_HOME; both paths take an env override
+_DATA_HOME = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+AUTH = os.environ.get("GO_AUTH") or os.path.join(_DATA_HOME, "opencode", "auth.json")
+ENDPOINT = os.environ.get("GO_ENDPOINT", "https://opencode.ai/zen/go/v1/usage")
 
 # window key -> (label, dollar cap, window length in days)
 WINDOWS = {
@@ -39,7 +41,7 @@ def window_state(usage, key, now=None):
     return pct, cap * pct / 100, cap * (100 - pct) / 100, reset, hours_left, elapsed_pct
 
 
-DB = os.path.expanduser("~/.local/share/opencode/opencode.db")
+DB = os.environ.get("GO_DB") or os.path.join(_DATA_HOME, "opencode", "opencode.db")
 PROVIDER = "opencode-go"
 
 

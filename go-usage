@@ -14,7 +14,14 @@ for arg in sys.argv[1:]:
     if arg != "--models":
         sys.exit(f"go-usage: unknown option {arg}\n{__doc__}")
 
-usage = fetch()
+try:
+    usage = fetch()
+except FileNotFoundError as e:
+    sys.exit(f"go-usage: no opencode credentials at {e.filename}\n"
+             f"  set GO_AUTH to your auth.json if opencode stores it elsewhere")
+except Exception as e:
+    sys.exit(f"go-usage: could not fetch usage: {e}")
+
 now = datetime.datetime.now(datetime.timezone.utc)
 print(f"opencode Go usage @ {now.astimezone():%Y-%m-%d %H:%M %Z}\n")
 for key, (label, cap, _days) in WINDOWS.items():

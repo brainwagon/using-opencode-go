@@ -19,7 +19,8 @@ from notify import notify, BACKEND
 PACE_TARGET = float(os.environ.get("GO_PACE_TARGET", "0.6"))
 MIN_ELAPSED = float(os.environ.get("GO_MIN_ELAPSED", "20"))
 INTERVAL_H = float(os.environ.get("GO_ALERT_INTERVAL_H", "24"))
-STATE = os.path.expanduser("~/.cache/go-alert.json")
+_CACHE_HOME = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+STATE = os.environ.get("GO_STATE") or os.path.join(_CACHE_HOME, "go-alert.json")
 
 
 def recently_alerted(now):
@@ -39,6 +40,10 @@ def main():
     now = datetime.datetime.now(datetime.timezone.utc)
     try:
         usage = fetch()
+    except FileNotFoundError as e:
+        print(f"go-alert: no opencode credentials at {e.filename}; "
+              f"set GO_AUTH if opencode stores it elsewhere", file=sys.stderr)
+        return 2
     except Exception as e:
         print(f"go-alert: could not fetch usage: {e}", file=sys.stderr)
         return 2

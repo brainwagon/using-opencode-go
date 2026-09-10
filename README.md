@@ -203,16 +203,30 @@ time, so it is approximate at the boundary in the same way the pace math is.
 
 Both scripts share `goquota.py`, which holds the constants in one place:
 
-- `AUTH` — path to opencode's credential file, default
-  `~/.local/share/opencode/auth.json`. The `opencode-go` key is read from it at runtime; no
-  key is stored in this repo.
-- `ENDPOINT` — the usage URL.
-- `DB` — opencode's SQLite database, source of the `--models` breakdown.
-- `PROVIDER` — the provider id counted against the Go plan (`opencode-go`); spend under
-  any other provider is reported separately as billed elsewhere.
 - `WINDOWS` — maps each window to its label, dollar cap, and length in days. **Update the
   caps here if opencode changes the plan**, since the API reports only percentages and
   cannot tell you the caps moved.
+- `PROVIDER` — the provider id counted against the Go plan (`opencode-go`); spend under
+  any other provider is reported separately as billed elsewhere.
+
+Nothing is hardcoded to a particular machine or user. Paths follow `XDG_DATA_HOME` /
+`XDG_CACHE_HOME` where opencode does, and each can be overridden:
+
+| Variable         | Default                                  | What it points at              |
+| ---------------- | ---------------------------------------- | ------------------------------ |
+| `GO_AUTH`        | `$XDG_DATA_HOME/opencode/auth.json`      | opencode's credential file     |
+| `GO_DB`          | `$XDG_DATA_HOME/opencode/opencode.db`    | history for `--models`         |
+| `GO_STATE`       | `$XDG_CACHE_HOME/go-alert.json`          | `go-alert`'s dedupe stamp      |
+| `GO_ENDPOINT`    | `https://opencode.ai/zen/go/v1/usage`    | the usage API                  |
+| `GO_POWERSHELL`  | auto-detected                            | `powershell.exe`               |
+
+`powershell.exe` is found by trying `GO_POWERSHELL`, then `PATH`, then globbing
+`/mnt/*/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` and the `pwsh.exe`
+locations — a glob across drives rather than an assumption that Windows is on `C:`. If it
+cannot be found, the failure says to set `GO_POWERSHELL` rather than dying obscurely.
+
+The API key is never read from a constant, an argument, or the environment — only from
+`auth.json` at runtime — so no credential can end up in this repo or in a cron line.
 
 ### Known limitations
 
@@ -266,12 +280,12 @@ crontab -e
 
 ```cron
 # Check opencode Go pace every weekday at 09:00 and 17:00
-0 9,17 * * 1-5 /home/markv/using-opencode-go/go-alert
+0 9,17 * * 1-5 /path/to/using-opencode-go/go-alert
 ```
 
-Absolute path is required: cron runs with `PATH=/usr/bin:/bin`, which contains neither the
-script nor `powershell.exe`. `go-alert` hardcodes the full path to `powershell.exe` for the
-same reason.
+Substitute the real checkout path. An absolute path is required, because cron runs with
+`PATH=/usr/bin:/bin` and does not expand `~`; `powershell.exe` is not on that PATH either,
+which is why `notify.py` locates it by search rather than relying on PATH.
 
 ### Notification backends
 
@@ -317,8 +331,8 @@ install:
 - **cron only runs while the distro is running.** WSL shuts the VM down a few seconds after
   the last shell exits, taking cron with it. A missed schedule is *not* made up on next
   boot. If you want checks while no terminal is open, drive it from Windows Task Scheduler
-  instead (`wsl.exe -d <distro> -e /home/markv/using-opencode-go/go-alert`), which starts
-  the distro on demand.
+  instead (`wsl.exe -d <distro> -e /path/to/using-opencode-go/go-alert`), which starts the
+  distro on demand.
 - **`notify-send` does not work here.** WSLg provides a display but no notification daemon —
   it fails with `org.freedesktop.Notifications was not provided by any .service files`.
   Every backend therefore goes out through `powershell.exe`, none of which need extra
